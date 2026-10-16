@@ -29,11 +29,12 @@ composition, but the starter does not prescribe a navigation hierarchy.
 
 ## Requirements
 
-- Node.js 22 or newer. The storage regression script uses the built-in
-  `node:sqlite` module.
+- Node.js 22.13 or newer. Expo SDK 57 requires that baseline, and the storage
+  regression script uses the built-in `node:sqlite` module.
 - npm.
-- Expo Go for the neutral demo, or an Expo development build once native
-  sign-in, purchases, or other native integrations are enabled.
+- A matching SDK 57 Expo Go install for the neutral demo, or an Expo development
+  build once native sign-in, purchases, or other native integrations are enabled.
+- Xcode 26.4 or newer for local iOS native builds.
 
 ## Quick start
 
@@ -54,6 +55,12 @@ remain unavailable until adapters and configuration are supplied.
 Use `npm start` instead of `npm run start:go` when working with an installed
 development client. Native builds and EAS builds are opt-in; they are not needed
 for the repository's unit or storage checks.
+
+Each Expo Go build supports one Expo SDK. On Android devices and iOS simulators,
+install the SDK 57-compatible Expo Go build. The iOS App Store build currently
+stops at SDK 54, so physical iOS testing for SDK 57 requires `eas go`/TestFlight
+or a development build. Prefer development builds for product work with native
+adapters.
 
 ## Architecture
 
@@ -263,13 +270,13 @@ submission is not evidence that native integrations or live services work.
 
 ## Baseline and dependency status
 
-This extraction retains its source project's Expo SDK 54 baseline. Optional
-Firebase, RevenueCat, and Sentry packages are included for convenience; remove an
-unused adapter and its package together. Treat Expo SDK modernization as a
-deliberate migration rather than an incidental dependency update.
+This starter targets Expo SDK 57 (`expo` 57.0.30), React Native 0.86.3, React
+19.2.3, and TypeScript 6.0.3. Optional Firebase, RevenueCat, and Sentry packages
+are included for convenience; remove an unused adapter, its package, and any
+matching config plugin together.
 
-As of 2026-10-15, compatible npm audit fixes removed the previously reported
-critical advisory. The complete dependency tree still reports 66 advisories
-(51 high and 15 moderate), including development tooling and optional SDK
-transitive dependencies. This is not a security-cleared release baseline; rerun
-the audit and review supported upgrades before shipping a product.
+As of 2026-10-15, the complete dependency tree reports 63 advisories (51 high and
+12 moderate), including development tooling and optional SDK transitive
+dependencies. This is not a security-cleared release baseline; rerun the audit
+and review supported upgrades before shipping a product. Do not apply breaking
+`npm audit --force` changes as incidental remediation.

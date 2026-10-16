@@ -7,7 +7,7 @@ const config: ExpoConfig = {
   orientation: 'portrait',
   ios: {bundleIdentifier: 'com.example.mobilestarter', supportsTablet:true},
   android: {package: 'com.example.mobilestarter'},
-  plugins: ['expo-sqlite'],
+  plugins: ['expo-sqlite', '@sentry/react-native', 'expo-status-bar'],
   extra: {apiUrl: process.env.EXPO_PUBLIC_API_URL}
 };
 export default config;
