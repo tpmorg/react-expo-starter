@@ -32,6 +32,8 @@ function mapUser(user: User | null): SessionUser | null {
   if (!user) return null;
   return {
     id: user.uid,
+    isAnonymous: user.isAnonymous,
+    providerIds: user.providerData.map(provider => provider.providerId),
     email: user.email ?? undefined,
     displayName: user.displayName ?? undefined
   };

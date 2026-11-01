@@ -2,6 +2,11 @@ import NetInfo from '@react-native-community/netinfo';
 
 import type { NetworkState } from '../contracts';
 
+/** An unknown initial probe does not mean offline. */
+export function isOnline(state: NetworkState): boolean {
+  return state.isConnected !== false && state.isInternetReachable !== false;
+}
+
 const initialState: NetworkState = {
   isConnected: null,
   isInternetReachable: null,

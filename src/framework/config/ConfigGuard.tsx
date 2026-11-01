@@ -2,8 +2,11 @@ import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { useAppServices } from '../appServices';
+import type { ConfigIssue } from './runtimeConfig';
 
-export function ConfigGuard({ children }: React.PropsWithChildren) {
+export function ConfigGuard({ children, renderConfigError }: React.PropsWithChildren<{
+  renderConfigError?: (issues: readonly ConfigIssue[]) => React.ReactNode;
+}>) {
   const { configIssues, reporter } = useAppServices();
   const errors = configIssues.filter((issue) => issue.severity === 'error');
 
@@ -18,6 +21,7 @@ export function ConfigGuard({ children }: React.PropsWithChildren) {
   }, [configIssues, reporter]);
 
   if (!errors.length) return children;
+  if (renderConfigError) return renderConfigError(errors);
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>The app configuration is incomplete.</Text>
@@ -29,8 +33,8 @@ export function ConfigGuard({ children }: React.PropsWithChildren) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#F4F0E8' },
-  title: { color: '#211D2B', fontSize: 20, lineHeight: 26, fontWeight: '700', textAlign: 'center' },
-  body: { color: '#6F6878', fontSize: 15, lineHeight: 22, textAlign: 'center', marginTop: 10 }
+  screen: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#FFFFFF' },
+  title: { color: '#202020', fontSize: 20, lineHeight: 26, fontWeight: '700', textAlign: 'center' },
+  body: { color: '#505050', fontSize: 15, lineHeight: 22, textAlign: 'center', marginTop: 10 }
 });
 

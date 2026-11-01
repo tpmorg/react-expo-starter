@@ -3,6 +3,9 @@ import Constants from 'expo-constants';
 export interface RuntimeConfig {
   apiUrl: string;
   sentryDsn: string | null;
+  environment?: string;
+  revenueCatIosKey?: string;
+  revenueCatAndroidKey?: string;
   revenueCatEntitlementId: string;
   revenueCatCreditCode: string;
   hasRevenueCatIosKey: boolean;
@@ -20,6 +23,9 @@ export function getRuntimeConfig(): RuntimeConfig {
   return {
     apiUrl: stringValue(extra.apiUrl),
     sentryDsn: nullableString(extra.sentryDsn),
+    environment: __DEV__ ? 'development' : stringValue(extra.appEnvironment) || 'production',
+    revenueCatIosKey: stringValue(extra.revenueCatIosKey),
+    revenueCatAndroidKey: stringValue(extra.revenueCatAndroidKey),
     revenueCatEntitlementId: stringValue(extra.revenueCatEntitlementId) || '',
     revenueCatCreditCode: stringValue(extra.revenueCatCreditCode) || '',
     hasRevenueCatIosKey: Boolean(extra.revenueCatIosKey),
@@ -30,15 +36,15 @@ export function getRuntimeConfig(): RuntimeConfig {
 export function validateRuntimeConfig(config: RuntimeConfig): ConfigIssue[] {
   const issues: ConfigIssue[] = [];
   if (!config.apiUrl) {
-    issues.push({ key: 'apiUrl', severity: 'warning', message: 'Generation API is not configured.' });
+    issues.push({ key: 'apiUrl', severity: 'warning', message: 'API is not configured.' });
   } else {
     try {
       const url = new URL(config.apiUrl);
-      if (url.protocol !== 'https:' && !isLocalHost(url.hostname)) {
-        issues.push({ key: 'apiUrl', severity: 'error', message: 'Generation API must use HTTPS outside local development.' });
+      if (url.username || url.password || (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLocalHost(url.hostname)))) {
+        issues.push({ key: 'apiUrl', severity: 'error', message: 'API must use HTTPS outside local development and must not contain credentials.' });
       }
     } catch {
-      issues.push({ key: 'apiUrl', severity: 'error', message: 'Generation API URL is invalid.' });
+      issues.push({ key: 'apiUrl', severity: 'error', message: 'API URL is invalid.' });
     }
   }
   if (config.sentryDsn && !/^https:\/\/.+@.+\/.+/.test(config.sentryDsn)) {

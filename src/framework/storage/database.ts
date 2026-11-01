@@ -1,8 +1,9 @@
 import * as SQLite from 'expo-sqlite';
+import type { SqlDatabase } from './ports';
 
 export interface DatabaseMigration {
   id: string;
-  migrate(db: SQLite.SQLiteDatabase): Promise<void>;
+  migrate(db: SqlDatabase): Promise<void>;
 }
 
 export class AppDatabase {

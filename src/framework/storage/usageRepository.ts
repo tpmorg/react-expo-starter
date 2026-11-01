@@ -1,9 +1,9 @@
 import type { UsageEvent } from '../contracts';
 import type { IdFactory } from '../ids';
-import { AppDatabase } from './database';
+import type { SqlDatabaseProvider } from './ports';
 
 export class UsageRepository {
-  constructor(private readonly database: AppDatabase, private readonly ids: IdFactory) {}
+  constructor(private readonly database: SqlDatabaseProvider, private readonly ids: IdFactory) {}
 
   async record(input: Omit<UsageEvent, 'id' | 'createdAt'> & { createdAt?: number }): Promise<UsageEvent> {
     const db = await this.database.connection();

@@ -1,4 +1,4 @@
-import { BillingStore } from '../billingStore';
+import { BillingStore, BillingAccountChangedError } from '../billingStore';
 import type { BillingGateway, BillingState } from '../../contracts';
 const state: BillingState = {isConfigured:true,isVerified:true,hasEntitlement:false,
   entitlementId:'pro',creditBalance:2,activeProductIds:[],purchasedProductIds:[],checkedAt:1};
@@ -22,7 +22,7 @@ test.each(['refresh','restore','purchase'] as const)('ignores %s results after a
   await store.start('alice');
   gateway.getState = wait;
   const operation = method==='purchase' ? store.purchase({id:'p',packageId:'p',title:'',description:'',priceLabel:'',kind:'subscription'}) : store[method]();
-  const rejection = expect(operation).rejects.toThrow('account changed');
+  const rejection = expect(operation).rejects.toBeInstanceOf(BillingAccountChangedError);
   await started.promise;
   const switched = store.start('bob');
   gateway.getState = async()=>({...state,creditBalance:8});

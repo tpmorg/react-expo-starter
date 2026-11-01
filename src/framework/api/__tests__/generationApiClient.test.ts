@@ -8,6 +8,7 @@ function response(status: number, payload: unknown): Response {
     status,
     ok: status >= 200 && status < 300,
     text: async () => JSON.stringify(payload),
+    json: async () => payload,
     headers: { get: () => null }
   } as unknown as Response;
 }

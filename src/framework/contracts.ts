@@ -10,14 +10,20 @@ export interface SessionUser {
   id: string;
   email?: string;
   displayName?: string;
+  isAnonymous?: boolean;
+  providerIds?: readonly string[];
 }
 
 export interface AuthTokenProvider {
   getToken(forceRefresh?: boolean): Promise<string | null>;
+  /** Optional identity fence for requests that must not cross an account switch. */
+  getOwnerId?(): string | null;
+  getSessionRevision?(): number;
 }
 
 export type AuthState =
   | { status: 'loading'; user: null }
+  // No session. A Firebase guest is authenticated with user.isAnonymous === true.
   | { status: 'anonymous'; user: null }
   | { status: 'authenticated'; user: SessionUser };
 
@@ -33,7 +39,10 @@ export interface BillingProduct {
   title: string;
   description: string;
   priceLabel: string;
-  kind: 'subscription' | 'credit_pack';
+  kind: 'subscription' | 'credit_pack' | 'non_consumable';
+  price?: number;
+  currencyCode?: string;
+  pricePerMonthLabel?: string | null;
 }
 
 export interface BillingState {
@@ -43,6 +52,7 @@ export interface BillingState {
   entitlementId: string;
   creditBalance: number;
   activeProductIds: string[];
+  activeEntitlementIds?: string[];
   purchasedProductIds: string[];
   checkedAt: number;
 }
@@ -135,19 +145,5 @@ export interface ErrorReporter {
   setUser(user: SessionUser | null): void;
 }
 
-export interface CreativeRecord {
-  id: string;
-  ownerId: string;
-  sourceImageUri: string;
-  generatedImageUri: string;
-  localImagePath: string | null;
-  title: string;
-  body: string;
-  metadataJson: string;
-  createdAt: number;
-  updatedAt: number;
-  isFavorite: boolean;
-  syncState: SyncState;
-  remoteId: string | null;
-  version: number;
-}
+/** @deprecated Import the optional model from src/modules/generation/contracts. */
+export type { CreativeRecord } from '../modules/generation/contracts';

@@ -1,6 +1,6 @@
 import type { PersistedGenerationJob, PersistedJobStatus } from '../contracts';
 import type { IdFactory } from '../ids';
-import { AppDatabase } from './database';
+import type { SqlDatabaseProvider } from './ports';
 
 interface JobRow {
   id: string;
@@ -19,7 +19,7 @@ interface JobRow {
 }
 
 export class JobRepository {
-  constructor(private readonly database: AppDatabase, private readonly ids: IdFactory) {}
+  constructor(private readonly database: SqlDatabaseProvider, private readonly ids: IdFactory) {}
 
   async create<TRequest>(input: {
     ownerId: string;

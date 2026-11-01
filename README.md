@@ -8,6 +8,10 @@ remote jobs, billing state, media storage, connectivity, error reporting, and
 queued synchronization. The checked-in app is intentionally a neutral storage
 smoke screen—not a product shell or example product.
 
+The [Purrlates iteration guide](docs/framework-iteration.md) evaluates the first
+production app's feedback and documents the optional account lifecycle, JSON API,
+outbox, sync triggers, boot, theme, notifications, web preview, and test modules.
+
 ## What this starter provides
 
 | Area | Included foundation |
@@ -15,9 +19,12 @@ smoke screen—not a product shell or example product.
 | App lifecycle | Provider composition, configuration validation, error boundary, and a retryable database gate |
 | Authentication | Auth contracts and store, anonymous fallback, and an adapter for an initialized Firebase Auth instance |
 | Persistence | Transactional SQLite migrations plus job, usage, billing-cache, and sync-queue repositories |
-| Remote jobs | Typed multipart job submission, bearer auth, one forced token refresh after `401`, bounded throttling retries, and polling |
+| API and remote jobs | Schema-validated JSON client with deadlines and account fencing; optional multipart jobs, throttling retries, and polling |
 | Billing | Account-safe billing store and an optional RevenueCat adapter for subscriptions and virtual-currency credit packs |
-| Offline/sync | Owner-scoped queueing, exponential retry scheduling, stale-acknowledgement protection, and guarded merge decisions |
+| Offline/sync | Owner-scoped queueing, batching/deferral, foreground triggers, guarded merge decisions, and an optional durable operation outbox |
+| Accounts | Serialized guest/link/merge/delete lifecycle through injected auth/backend ports, owner registry and recovery journals |
+| App presentation | Product-supplied fallback renderers, typed theme mechanism, named boot steps and font gate |
+| Notifications | Optional local notification adapter with app-supplied channel, source and deep-link policy |
 | Device storage | Namespaced AsyncStorage preferences and app-owned durable media copies |
 | Operations | Network state and pluggable console/Sentry-compatible error reporting |
 | Verification | Unit tests plus a real SQLite migration/storage regression check |
@@ -87,16 +94,21 @@ The source tree is deliberately split by ownership:
 src/
   framework/              Reusable, product-neutral infrastructure
     api/                   Authenticated asynchronous job client
+    account/               Guest, link, merge, delete, and owner registry ports
     auth/                  Auth contracts, state, and Firebase adapter
     billing/               Billing state and RevenueCat adapter
+    boot/                  Explicit splash controller, boot steps and font gate
     config/                Runtime configuration parsing and validation
     errors/                Application error boundary
     media/                 App-owned file persistence
     network/               Connectivity monitor and provider
+    notifications/         Optional local notifications and web stub
     observability/         Console and Sentry reporters
     storage/               SQLite database, migrations, and repositories
     sync/                  Queue worker and merge policy
-    usage/                 Client-side generation-access hints
+    theme/                 Typed theme mechanism and contrast helpers
+    testing/               Test providers, memory preferences and Node SQLite
+  modules/generation/      Optional generation model and client access hint
   features/               Product-owned code; add this directory per app
 ```
 
@@ -141,16 +153,19 @@ it—because changing it recreates the service graph.
 
 ## Configuration
 
-The starter currently wires one environment value through `app.config.ts`:
+`.env.example` lists the optional public identifiers wired through `app.config.ts`.
+Leave integrations unset for the neutral local demo. The API entry is:
 
 | Environment value | Expo `extra` key | Required | Purpose |
 | --- | --- | --- | --- |
 | `EXPO_PUBLIC_API_URL` | `apiUrl` | No | Base URL used by `GenerationApiClient`; non-local URLs must use HTTPS |
 
-`runtimeConfig.ts` also understands Sentry and RevenueCat-related public client
-configuration. If a product uses those helpers, explicitly map the relevant
-values into Expo `extra` and inject the matching adapter. Keep RevenueCat public
-SDK keys separate from store shared secrets and backend API keys.
+`runtimeConfig.ts` exposes environment, Sentry DSN and RevenueCat public client
+keys. Firebase client identifiers and Google client IDs are also mapped into Expo
+`extra`; initialize and inject the matching adapters in the composition root.
+Keep RevenueCat public SDK keys separate from store shared secrets and backend
+API keys. Sentry, Apple, Google and notification config plugins are conditional
+on their configuration. Encryption declarations remain an explicit app decision.
 
 Missing API configuration is a warning so the local starter can run. An invalid
 URL, or non-HTTPS URL outside `localhost`, `127.0.0.1`, and Android emulator host
@@ -167,10 +182,12 @@ never rename or rewrite an ID already shipped to users.
 
 ### Authentication
 
-The default `GuestAuthGateway` keeps the app anonymous. To use Firebase, initialize
-Firebase Auth in product code and inject `FirebaseAuthGateway`; persistence,
-provider setup, sign-in UI, deep links, and platform credentials remain product
-responsibilities.
+The default `GuestAuthGateway` keeps the app without a session. Auth stays loading
+until the gateway confirms restoration. A Firebase guest session is authenticated
+with `user.isAnonymous: true`. Use `initializeFirebaseAuth` for native persistence,
+then inject `FirebaseAuthGateway`; provider setup, sign-in UI, deep links and
+platform credentials remain product responsibilities. Optional `AccountService`
+and native identity adapters are described in the iteration guide.
 
 The generic API client asks the gateway for a bearer token and forces exactly
 one refresh after a `401` response.
@@ -196,7 +213,9 @@ automatically retried. Other failures are returned to the product to resolve.
 
 ### Billing and usage
 
-`RevenueCatGateway` supports subscriptions and explicit credit-pack product IDs.
+`RevenueCatGateway` supports subscriptions, explicit credit-pack product IDs, and
+non-consumables, with price/currency/monthly-equivalent metadata. Older cached
+billing snapshots are normalized and never treated as verified.
 Billing SDK operations are serialized, and session epochs reject stale startup,
 refresh, purchase, restore, and sign-out results when accounts change during an
 asynchronous operation.
@@ -213,10 +232,13 @@ queued entry gives it a new ID so a late acknowledgement for older work cannot
 delete the replacement. `SyncWorker` processes ready entries sequentially and
 backs failures off to a maximum of 15 minutes.
 
-The framework does not schedule `SyncWorker`. Product code owns the transport,
-trigger policy, lifecycle/background integration, and conflict UI. Use the merge
-policy before overwriting local state; pending, failed, conflicted, newer, or
-otherwise unsynced local records are preserved by default.
+`SyncTriggers` provides an optional foreground/reconnect/owner-change/interval
+policy. Product code supplies the transport and conflict UI; native background
+execution remains a product integration. Transports can batch entries or defer
+offline work without a failure penalty. A response merge runs after acknowledgement
+of the exact uploaded queue ID. Use the merge policy before overwriting local
+state; pending, failed, conflicted, newer, or otherwise unsynced local records are
+preserved by default.
 
 ### Media
 
@@ -239,7 +261,7 @@ npm run test:storage
 | --- | --- | --- |
 | `npm run typecheck` | TypeScript source compatibility | Runtime or native behavior |
 | `npm test` | Jest regression coverage for framework logic | Device, service, or store behavior |
-| `npm run test:storage` | Fresh and legacy migration behavior against Node's real SQLite engine, data preservation, queue replacement, and owner isolation | Expo SQLite behavior on iOS or Android |
+| `npm run test:storage` | Fresh/legacy SQL, data preservation, queue replacement, owner isolation, outbox restart/idempotency and transaction rollback | Expo SQLite behavior on iOS or Android |
 
 After adding native adapters, separately verify the development build on each
 supported platform. Firebase persistence and native sign-in, RevenueCat purchase
@@ -270,13 +292,13 @@ submission is not evidence that native integrations or live services work.
 
 ## Baseline and dependency status
 
-This starter targets Expo SDK 57 (`expo` 57.0.30), React Native 0.86.3, React
+This starter targets Expo SDK 57 (`expo` 57.0.31), React Native 0.86.3, React
 19.2.3, and TypeScript 6.0.3. Optional Firebase, RevenueCat, and Sentry packages
 are included for convenience; remove an unused adapter, its package, and any
 matching config plugin together.
 
-As of 2026-10-15, the complete dependency tree reports 63 advisories (51 high and
-12 moderate), including development tooling and optional SDK transitive
-dependencies. This is not a security-cleared release baseline; rerun the audit
-and review supported upgrades before shipping a product. Do not apply breaking
-`npm audit --force` changes as incidental remediation.
+Dependency advisories change as npm updates its database. Run `npm audit` and
+review supported upgrades before shipping a product. Do not apply breaking
+`npm audit --force` changes as incidental remediation. Optional native adapters
+need a new development build when enabled; a successful unit run does not prove
+those native integrations.

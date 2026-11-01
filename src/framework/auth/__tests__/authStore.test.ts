@@ -26,11 +26,26 @@ class FakeGateway implements AuthGateway {
 }
 
 describe('AuthStore', () => {
+  it('never publishes no-session while a saved account is being restored', () => {
+    const gateway = new FakeGateway(); const store = new AuthStore(gateway);
+    const seen: string[] = []; store.subscribe(state => seen.push(state.status));
+    store.start();
+    expect(store.getSnapshot().status).toBe('loading');
+    gateway.emit({ id: 'saved', isAnonymous: false });
+    expect(seen).not.toContain('anonymous');
+    expect(store.getSnapshot().user?.id).toBe('saved');
+    gateway.emit(null); expect(store.getSnapshot().status).toBe('anonymous');
+  });
+  it('represents guest sessions as authenticated', () => {
+    const gateway = new FakeGateway(); gateway.user = { id: 'guest', isAnonymous: true };
+    const store = new AuthStore(gateway); store.start();
+    expect(store.getSnapshot().status).toBe('authenticated');
+  });
   it('tracks gateway sessions and forwards forced token refresh', async () => {
     const gateway = new FakeGateway();
     const store = new AuthStore(gateway);
     store.start();
-    expect(store.getSnapshot().status).toBe('anonymous');
+    expect(store.getSnapshot().status).toBe('loading');
 
     gateway.emit({ id: 'user-1', email: 'reader@example.com' });
     expect(store.getSnapshot()).toEqual({

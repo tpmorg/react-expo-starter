@@ -15,6 +15,7 @@ const emptyState = (entitlementId: string): BillingState => ({
   entitlementId,
   creditBalance: 0,
   activeProductIds: [],
+  activeEntitlementIds: [],
   purchasedProductIds: [],
   checkedAt: Date.now()
 });
@@ -27,6 +28,7 @@ export class RevenueCatGateway implements BillingGateway {
   constructor(private readonly options: {
     iosKey?: string; androidKey?: string; entitlementId: string; creditCode: string;
     creditPackProductIds: readonly string[];
+    nonConsumableProductIds?: readonly string[];
   }) {}
   async configure(userId: string): Promise<boolean> {
     if (this.configured) return true;
@@ -75,7 +77,11 @@ export class RevenueCatGateway implements BillingGateway {
       title: item.product.title,
       description: item.product.description,
       priceLabel: item.product.priceString,
-      kind: this.options.creditPackProductIds.includes(item.product.identifier) ? 'credit_pack' : 'subscription'
+      kind: this.options.creditPackProductIds.includes(item.product.identifier) ? 'credit_pack'
+        : this.options.nonConsumableProductIds?.includes(item.product.identifier) ? 'non_consumable' : 'subscription',
+      price: item.product.price,
+      currencyCode: item.product.currencyCode,
+      pricePerMonthLabel: item.product.pricePerMonthString ?? null
     }));
   }
 
@@ -93,7 +99,12 @@ export class RevenueCatGateway implements BillingGateway {
         return { status: 'failed', state: await this.getState(), message: 'Product is unavailable.' };
       }
       const { customerInfo } = await Purchases.purchasePackage(selected);
-      return { status: 'purchased', state: await this.stateFromPurchase(customerInfo) };
+      try { return { status: 'purchased', state: await this.stateFromPurchase(customerInfo) }; }
+      catch {
+        // The store confirmed payment. A credit-refresh outage must not turn that into
+        // a failed purchase that a caller might repeat. Reconcile with the server later.
+        return { status: 'purchased', state: { ...this.mapState(customerInfo, 0), isVerified: false } };
+      }
     } catch (error) {
       const purchaseError = error as { userCancelled?: boolean; message?: string };
       return {
@@ -128,6 +139,7 @@ export class RevenueCatGateway implements BillingGateway {
       entitlementId: this.entitlementId,
       creditBalance: Math.max(0, creditBalance),
       activeProductIds: [...info.activeSubscriptions],
+      activeEntitlementIds: Object.keys(info.entitlements.active).sort(),
       purchasedProductIds: [...info.allPurchasedProductIdentifiers],
       checkedAt: Date.now()
     };

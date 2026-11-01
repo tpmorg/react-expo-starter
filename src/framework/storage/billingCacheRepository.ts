@@ -1,8 +1,9 @@
 import type { BillingState } from '../contracts';
-import { AppDatabase } from './database';
+import type { SqlDatabaseProvider } from './ports';
+import { normalizeBillingState } from '../billing/normalizeBillingState';
 
 export class BillingCacheRepository {
-  constructor(private readonly database: AppDatabase) {}
+  constructor(private readonly database: SqlDatabaseProvider) {}
 
   async save(ownerId: string, state: BillingState): Promise<void> {
     const db = await this.database.connection();
@@ -24,7 +25,8 @@ export class BillingCacheRepository {
       'SELECT state_json FROM billing_snapshots WHERE owner_id = ?',
       ownerId
     );
-    return row ? JSON.parse(row.state_json) : null;
+    try { return row ? normalizeBillingState(JSON.parse(row.state_json)) : null; }
+    catch { return null; }
   }
 
   async clear(ownerId: string): Promise<void> {

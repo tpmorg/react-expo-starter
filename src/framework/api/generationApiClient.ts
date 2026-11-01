@@ -1,11 +1,5 @@
 import type { AuthTokenProvider, GenerationJob } from '../contracts';
-
-interface ErrorPayload {
-  code?: string;
-  message?: string;
-  retryable?: boolean;
-  requestId?: string;
-}
+import { ApiClient, ApiRequestError } from './apiClient';
 
 export class GenerationApiError extends Error {
   constructor(
@@ -21,11 +15,12 @@ export class GenerationApiError extends Error {
 }
 
 export class GenerationApiClient<TRequest = unknown, TResult = unknown> {
+  private readonly client: ApiClient;
   constructor(
     private readonly baseUrl: string,
     private readonly tokens: AuthTokenProvider,
     private readonly jobsPath = '/api/v1/jobs'
-  ) {}
+  ) { this.client = new ApiClient(baseUrl, tokens); }
 
   async createJob(
     imageUri: string,
@@ -52,8 +47,13 @@ export class GenerationApiClient<TRequest = unknown, TResult = unknown> {
     init: RequestInit,
     maxAttempts = 4
   ): Promise<T> {
+    const owner = this.tokens.getOwnerId?.();
+    const revision = this.tokens.getSessionRevision?.();
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      if (owner !== this.tokens.getOwnerId?.() || revision !== this.tokens.getSessionRevision?.()) {
+        throw new GenerationApiError('The active account changed.', 'ACCOUNT_CHANGED', 0, false);
+      }
       try {
         return await this.request<T>(path, init);
       } catch (error) {
@@ -76,6 +76,13 @@ export class GenerationApiClient<TRequest = unknown, TResult = unknown> {
   ): Promise<TResult> {
     const timeoutMs = options.timeoutMs ?? 180_000;
     const deadline = Date.now() + timeoutMs;
+    const owner = this.tokens.getOwnerId?.();
+    const revision = this.tokens.getSessionRevision?.();
+    const assertIdentity = () => {
+      if (owner !== this.tokens.getOwnerId?.() || revision !== this.tokens.getSessionRevision?.()) {
+        throw new GenerationApiError('The active account changed.', 'ACCOUNT_CHANGED', 0, false);
+      }
+    };
     let job = initial;
 
     while (job.status === 'queued' || job.status === 'running') {
@@ -88,15 +95,17 @@ export class GenerationApiClient<TRequest = unknown, TResult = unknown> {
         );
       }
       await pause(job.pollAfterMs ?? 1500, options.signal);
+      assertIdentity();
       job = await this.request(`${this.jobsPath}/${encodeURIComponent(job.id)}`, {
         method: 'GET',
         signal: options.signal
       });
     }
 
-    if (job.status === 'succeeded' && job.result) return job.result;
+    assertIdentity();
+    if (job.status === 'succeeded' && job.result !== undefined) return job.result;
     throw new GenerationApiError(
-      job.error?.message ?? 'The generation did not complete.',
+      'The generation did not complete.',
       job.error?.code ?? 'JOB_FAILED',
       400,
       job.error?.retryable ?? false,
@@ -104,55 +113,24 @@ export class GenerationApiClient<TRequest = unknown, TResult = unknown> {
     );
   }
 
-  private async request<T>(path: string, init: RequestInit, didRefresh = false): Promise<T> {
-    if (!this.baseUrl) throw new GenerationApiError('API URL is not configured.', 'CONFIGURATION', 0, false);
-    const token = await this.tokens.getToken(didRefresh);
-    if (!token) throw new GenerationApiError('Sign in to use the API.', 'UNAUTHENTICATED', 401, false);
-    const headers = new Headers(init.headers);
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    headers.set('Accept', 'application/json');
-
-    let response: Response;
+  private async request<T>(path: string, init: RequestInit): Promise<T> {
     try {
-      response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
-        ...init,
-        headers
+      return await this.client.request<T>(path, {
+        method: init.method, headers: init.headers, rawBody: init.body ?? undefined,
+        signal: init.signal ?? undefined,
+        schema: { parse(value) {
+          if (!value || typeof value !== 'object' || !('id' in value) || typeof value.id !== 'string' || !('status' in value) || !['queued', 'running', 'succeeded', 'failed', 'cancelled'].includes(String(value.status))) {
+            throw new Error('Invalid job.');
+          }
+          return value as T;
+        } }
       });
     } catch (error) {
-      throw new GenerationApiError(
-        error instanceof Error ? error.message : 'Network request failed.',
-        'NETWORK_ERROR',
-        0,
-        true
-      );
+      if (error instanceof ApiRequestError) throw new GenerationApiError(error.message,
+        error.code === 'NOT_CONFIGURED' ? 'CONFIGURATION' : error.code === 'NETWORK' ? 'NETWORK_ERROR' : error.code,
+        error.status, error.retryable, error.requestId);
+      throw error;
     }
-
-    if (response.status === 401 && !didRefresh) {
-      return this.request(path, init, true);
-    }
-
-    const payload = await readJson<T | ErrorPayload>(response);
-    if (!response.ok) {
-      const error = payload as ErrorPayload;
-      throw new GenerationApiError(
-        error.message ?? 'The service could not complete this request.',
-        error.code ?? `HTTP_${response.status}`,
-        response.status,
-        error.retryable ?? response.status >= 500,
-        error.requestId ?? response.headers.get('x-request-id') ?? undefined
-      );
-    }
-    return payload as T;
-  }
-}
-
-async function readJson<T>(response: Response): Promise<T> {
-  const text = await response.text();
-  if (!text) return {} as T;
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new GenerationApiError('The service returned an invalid response.', 'INVALID_RESPONSE', 502, true);
   }
 }
 

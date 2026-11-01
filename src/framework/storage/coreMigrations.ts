@@ -1,5 +1,5 @@
 import type { DatabaseMigration } from './database';
-import type { SQLiteDatabase } from 'expo-sqlite';
+import type { SqlDatabase } from './ports';
 
 export const coreMigrations: readonly DatabaseMigration[] = [
   {
@@ -87,7 +87,7 @@ export const coreMigrations: readonly DatabaseMigration[] = [
 ];
 
 async function ensureColumn(
-  db: SQLiteDatabase,
+  db: SqlDatabase,
   table: string,
   column: string,
   definition: string

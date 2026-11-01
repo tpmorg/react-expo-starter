@@ -10,6 +10,10 @@ export type BillingStoreState =
   | {status: 'ready'; value: BillingState; error: null}
   | {status: 'error'; value: BillingState | null; error: string};
 
+export class BillingAccountChangedError extends Error {
+  constructor() { super('Billing account changed.'); this.name = 'BillingAccountChangedError'; }
+}
+
 export class BillingStore {
   private ownerId: string | null = null;
   private epoch = 0;
@@ -19,6 +23,16 @@ export class BillingStore {
   private listeners = new Set<(state: BillingStoreState) => void>();
   constructor(private gateway: BillingGateway, private cache: BillingCachePort, private reporter: ErrorReporter) {}
   getSnapshot() { return this.state; }
+  /** Wait for initialization; never automatically retry a purchase after an uncertain result. */
+  whenSettled(): Promise<void> {
+    if (this.state.status !== 'loading') return Promise.resolve();
+    return new Promise(resolve => {
+      const listener = (state: BillingStoreState) => {
+        if (state.status !== 'loading') { this.listeners.delete(listener); resolve(); }
+      };
+      this.listeners.add(listener);
+    });
+  }
   subscribe(listener: (state: BillingStoreState) => void) {
     this.listeners.add(listener); listener(this.state);
     return () => {this.listeners.delete(listener);};
@@ -66,13 +80,13 @@ export class BillingStore {
     const owner = this.ownerId; const epoch = this.epoch;
     if(!owner) return Promise.reject(new Error('Billing has no active account.'));
     return this.serial(async () => {
-      if(epoch !== this.epoch) throw new Error('Billing account changed.');
+      if(epoch !== this.epoch) throw new BillingAccountChangedError();
       const result = await run();
-      if(epoch !== this.epoch) throw new Error('Billing account changed.');
+      if(epoch !== this.epoch) throw new BillingAccountChangedError();
       if(stateOf) {
         const state = stateOf(result);
         await this.cache.save(owner, state);
-        if(epoch !== this.epoch) throw new Error('Billing account changed.');
+        if(epoch !== this.epoch) throw new BillingAccountChangedError();
         this.publish({status:'ready',value:state,error:null});
       }
       return result;

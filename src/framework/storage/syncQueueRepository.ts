@@ -1,6 +1,6 @@
 import type { SyncQueueEntry } from '../contracts';
 import type { IdFactory } from '../ids';
-import { AppDatabase } from './database';
+import type { SqlDatabaseProvider } from './ports';
 
 interface QueueRow {
   id: string;
@@ -16,7 +16,7 @@ interface QueueRow {
 }
 
 export class SyncQueueRepository {
-  constructor(private readonly database: AppDatabase, private readonly ids: IdFactory) {}
+  constructor(private readonly database: SqlDatabaseProvider, private readonly ids: IdFactory) {}
 
   async enqueue<TPayload>(input: Omit<SyncQueueEntry<TPayload>, 'id' | 'attempts' | 'createdAt' | 'updatedAt'>): Promise<void> {
     const db = await this.database.connection();

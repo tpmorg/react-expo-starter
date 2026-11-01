@@ -1,11 +1,13 @@
 {
   "cli": {
-    "version": ">= 16.0.0"
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": { "SENTRY_DISABLE_AUTO_UPLOAD": "true" }
     },
     "preview": {
       "distribution": "internal"
